@@ -1,0 +1,243 @@
+<!DOCTYPE html>
+<html lang="en-GB">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<meta name="theme-color" content="#161616">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black">
+<meta name="apple-mobile-web-app-title" content="RJH Calc">
+<title>RJH Site Calculator</title>
+<link href="https://fonts.googleapis.com/css2?family=Barlow+Condensed:wght@600;700&family=Barlow:wght@400;500;600&display=swap" rel="stylesheet">
+<style>
+  :root{
+    --paper:#F7F6F2;      /* chalky light background, readable in sun */
+    --ink:#161616;
+    --ink-2:#4A4A46;
+    --line:#D8D6CF;
+    --field:#FFFFFF;
+    --hivis:#F2A900;      /* safety yellow, results only */
+    --hivis-ink:#161616;
+    --danger:#B3261E;
+    --r:6px;
+  }
+  *{box-sizing:border-box}
+  html,body{margin:0;background:var(--paper);color:var(--ink);
+    font-family:"Barlow",system-ui,-apple-system,"Segoe UI",Roboto,sans-serif;font-size:17px;line-height:1.35;
+    -webkit-text-size-adjust:100%}
+  .wrap{max-width:520px;margin:0 auto;padding:0 16px 40px;padding-top:max(12px,env(safe-area-inset-top))}
+
+  header{display:flex;align-items:baseline;justify-content:space-between;padding:14px 0 10px;border-bottom:3px solid var(--ink)}
+  header h1{margin:0;font-family:"Barlow Condensed",Impact,"Arial Narrow",sans-serif;font-weight:700;font-size:30px;letter-spacing:.5px;text-transform:uppercase}
+  header small{font-size:13px;color:var(--ink-2);font-weight:500}
+
+  /* tabs */
+  .tabs{display:grid;grid-template-columns:1fr 1fr;gap:0;margin:14px 0 18px;border:2px solid var(--ink);border-radius:var(--r);overflow:hidden}
+  .tabs button{appearance:none;border:0;background:transparent;color:var(--ink);padding:12px 8px;font:inherit;font-weight:600;font-size:16px;text-transform:uppercase;letter-spacing:.4px;cursor:pointer}
+  .tabs button[aria-selected="true"]{background:var(--ink);color:var(--paper)}
+  .tabs button:focus-visible{outline:3px solid var(--hivis);outline-offset:-3px}
+
+  section[hidden]{display:none}
+
+  .field{margin:0 0 14px}
+  .field label{display:block;font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-2);margin-bottom:6px}
+  .in{display:flex;align-items:stretch;border:2px solid var(--ink);border-radius:var(--r);background:var(--field);overflow:hidden}
+  .in input{flex:1;min-width:0;border:0;background:transparent;font:inherit;font-size:26px;font-weight:600;padding:10px 14px;color:var(--ink);font-variant-numeric:tabular-nums}
+  .in input:focus{outline:none}
+  .in:focus-within{box-shadow:0 0 0 3px var(--hivis)}
+  .in .unit{display:flex;align-items:center;padding:0 14px;border-left:2px solid var(--line);color:var(--ink-2);font-weight:600;font-size:15px}
+
+  .seg{display:grid;gap:8px}
+  .seg.two{grid-template-columns:1fr 1fr}
+  .seg.chips{grid-template-columns:repeat(4,1fr)}
+  .seg button{appearance:none;border:2px solid var(--ink);border-radius:var(--r);background:var(--field);color:var(--ink);font:inherit;font-weight:600;font-size:17px;padding:12px 6px;cursor:pointer;min-height:48px;font-variant-numeric:tabular-nums}
+  .seg button[aria-pressed="true"]{background:var(--ink);color:var(--paper)}
+  .seg button:focus-visible{outline:3px solid var(--hivis);outline-offset:2px}
+
+  /* result ticket */
+  .ticket{margin-top:22px;background:var(--hivis);color:var(--hivis-ink);border-radius:var(--r);padding:18px 18px 16px;position:relative}
+  .ticket .eyebrow{font-size:13px;font-weight:600;text-transform:uppercase;letter-spacing:.6px;margin:0 0 2px;opacity:.85}
+  .ticket .big{font-family:"Barlow Condensed",Impact,"Arial Narrow",sans-serif;font-weight:700;font-size:72px;line-height:1;letter-spacing:-1px;font-variant-numeric:tabular-nums;margin:0}
+  .ticket .big span{font-size:32px;letter-spacing:0;margin-left:4px}
+  .ticket .row{display:flex;justify-content:space-between;gap:12px;border-top:2px dashed rgba(0,0,0,.25);margin-top:14px;padding-top:12px;font-size:15px;font-weight:500}
+  .ticket .row b{font-weight:700}
+  .ticket.err{background:var(--danger);color:#fff}
+  .ticket.err .big{font-size:26px;font-family:"Barlow",sans-serif;font-weight:600;line-height:1.3}
+
+  details{margin-top:22px;border-top:1px solid var(--line);padding-top:10px}
+  summary{cursor:pointer;font-weight:600;font-size:14px;text-transform:uppercase;letter-spacing:.6px;color:var(--ink-2);list-style:none;display:flex;justify-content:space-between;align-items:center;padding:6px 0}
+  summary::-webkit-details-marker{display:none}
+  summary::after{content:"+";font-size:20px}
+  details[open] summary::after{content:"–"}
+  .grid2{display:grid;grid-template-columns:1fr 1fr;gap:12px;margin-top:8px}
+  .grid2 .in input{font-size:19px;padding:8px 12px}
+  .note{font-size:13px;color:var(--ink-2);margin:10px 0 0}
+
+  footer{margin-top:26px;font-size:12px;color:var(--ink-2);line-height:1.5}
+  @media (prefers-reduced-motion:no-preference){.ticket .big{transition:opacity .12s}}
+</style>
+</head>
+<body>
+<div class="wrap">
+  <header>
+    <h1>RJH Site Calculator</h1>
+    <small>Tarmac &amp; bedding</small>
+  </header>
+
+  <div class="tabs" role="tablist">
+    <button role="tab" id="tab-tarmac" aria-selected="true" aria-controls="panel-tarmac">Tarmac</button>
+    <button role="tab" id="tab-bedding" aria-selected="false" aria-controls="panel-bedding">Pipe bedding</button>
+  </div>
+
+  <!-- TARMAC -->
+  <section id="panel-tarmac" role="tabpanel" aria-labelledby="tab-tarmac">
+    <div class="field">
+      <label for="area">Area</label>
+      <div class="in"><input id="area" type="number" inputmode="decimal" min="0" step="any" placeholder="0"><span class="unit">m²</span></div>
+    </div>
+    <div class="field">
+      <label for="thick">Thickness</label>
+      <div class="in"><input id="thick" type="number" inputmode="numeric" min="0" step="5" placeholder="0"><span class="unit">mm</span></div>
+    </div>
+    <div class="field">
+      <label>Aggregate</label>
+      <div class="seg two" id="material">
+        <button type="button" data-mat="limestone" aria-pressed="true">Limestone</button>
+        <button type="button" data-mat="hardstone" aria-pressed="false">Hardstone</button>
+      </div>
+    </div>
+
+    <div class="ticket" id="tarmac-ticket" aria-live="polite">
+      <p class="eyebrow">Tarmac required</p>
+      <p class="big" id="tarmac-t">0.0<span>t</span></p>
+      <div class="row"><span id="tarmac-detail">Enter an area and thickness</span><b id="tarmac-loads"></b></div>
+    </div>
+
+    <details>
+      <summary>Adjust rates</summary>
+      <div class="grid2">
+        <div class="field"><label for="d-lime">Limestone t/m³</label><div class="in"><input id="d-lime" type="number" inputmode="decimal" step="0.01" value="2.27"></div></div>
+        <div class="field"><label for="d-hard">Hardstone t/m³</label><div class="in"><input id="d-hard" type="number" inputmode="decimal" step="0.01" value="2.52"></div></div>
+        <div class="field"><label for="waste">Waste allowance</label><div class="in"><input id="waste" type="number" inputmode="decimal" step="1" value="0"><span class="unit">%</span></div></div>
+        <div class="field"><label for="wagon">Wagon size</label><div class="in"><input id="wagon" type="number" inputmode="decimal" step="1" value="20"><span class="unit">t</span></div></div>
+      </div>
+      <p class="note">Densities match the coverage table in the RJH spreadsheet (e.g. 100 mm limestone = 4.40 m²/t).</p>
+    </details>
+  </section>
+
+  <!-- BEDDING -->
+  <section id="panel-bedding" role="tabpanel" aria-labelledby="tab-bedding" hidden>
+    <div class="field">
+      <label>Pipe diameter (mm)</label>
+      <div class="seg chips" id="pipe"></div>
+    </div>
+    <div class="field">
+      <label for="run">Length of run</label>
+      <div class="in"><input id="run" type="number" inputmode="decimal" min="0" step="any" placeholder="0"><span class="unit">m</span></div>
+    </div>
+
+    <div class="ticket" id="bed-ticket" aria-live="polite">
+      <p class="eyebrow">Bedding required</p>
+      <p class="big" id="bed-t">0.0<span>t</span></p>
+      <div class="row"><span id="bed-detail">Pick a pipe size and enter a length</span><b id="bed-loads"></b></div>
+    </div>
+
+    <details>
+      <summary>Adjust rates</summary>
+      <div class="grid2">
+        <div class="field"><label for="d-bed">Bedding t/m³</label><div class="in"><input id="d-bed" type="number" inputmode="decimal" step="0.01" value="2.2"></div></div>
+        <div class="field"><label for="waste-b">Waste allowance</label><div class="in"><input id="waste-b" type="number" inputmode="decimal" step="1" value="0"><span class="unit">%</span></div></div>
+      </div>
+      <p class="note">m³ per metre by pipe size is taken from the RJH spreadsheet table.</p>
+    </details>
+  </section>
+
+  <footer>
+    R.J. Howard Engineers Ltd. Site estimating aid only. Check against the drawings and order to the nearest load.
+    <br>Tip: open this link in Safari or Chrome and choose "Add to Home Screen" to keep it as an app.
+  </footer>
+</div>
+
+<script>
+  // ---- Bedding table (m³ per metre) from the spreadsheet ----
+  const BED = {150:0.22,225:0.25,300:0.30,375:0.40,450:0.50,525:0.60,600:0.70,675:0.80,750:0.90,800:1.00,
+               900:1.15,1050:1.25,1200:1.50,1400:2.00,1500:2.60,1600:3.00,1800:3.30,2000:3.60,2200:4.00,2400:4.50};
+
+  const $ = id => document.getElementById(id);
+  const num = id => { const v = parseFloat($(id).value); return isNaN(v) ? 0 : v; };
+  const fmt1 = n => n.toLocaleString('en-GB',{minimumFractionDigits:1,maximumFractionDigits:1});
+  const loadsText = (t, wagon) => wagon>0 ? `${Math.ceil(t/wagon)} × ${wagon}t load${Math.ceil(t/wagon)===1?'':'s'}` : '';
+
+  // ---- Tabs ----
+  document.querySelectorAll('[role=tab]').forEach(tab=>{
+    tab.addEventListener('click',()=>{
+      document.querySelectorAll('[role=tab]').forEach(t=>t.setAttribute('aria-selected', t===tab));
+      document.querySelectorAll('[role=tabpanel]').forEach(p=>p.hidden = p.id!==tab.getAttribute('aria-controls'));
+    });
+  });
+
+  // ---- Tarmac ----
+  let material = 'limestone';
+  $('material').addEventListener('click',e=>{
+    const b = e.target.closest('button'); if(!b) return;
+    material = b.dataset.mat;
+    $('material').querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', x===b));
+    calcTarmac();
+  });
+
+  function calcTarmac(){
+    const area = num('area'), thick = num('thick');
+    const dens = material==='limestone' ? num('d-lime') : num('d-hard');
+    const waste = 1 + num('waste')/100;
+    const tk = $('tarmac-ticket');
+    tk.classList.remove('err');
+    if(area<=0 || thick<=0){
+      $('tarmac-t').innerHTML = '0.0<span>t</span>';
+      $('tarmac-detail').textContent = 'Enter an area and thickness';
+      $('tarmac-loads').textContent = '';
+      return;
+    }
+    const t = area * (thick/1000) * dens * waste;
+    const cover = 1 / ((thick/1000) * dens);          // m² per tonne, for cross-checking with the old table
+    $('tarmac-t').innerHTML = fmt1(t)+'<span>t</span>';
+    $('tarmac-detail').textContent = `${area} m² × ${thick} mm ${material} · ${cover.toFixed(2)} m²/t`;
+    $('tarmac-loads').textContent = loadsText(t, num('wagon'));
+  }
+  ['area','thick','d-lime','d-hard','waste','wagon'].forEach(id=>$(id).addEventListener('input',calcTarmac));
+
+  // ---- Bedding ----
+  let pipe = 225;
+  const pipeEl = $('pipe');
+  Object.keys(BED).forEach(d=>{
+    const b = document.createElement('button');
+    b.type='button'; b.textContent=d; b.dataset.d=d;
+    b.setAttribute('aria-pressed', +d===pipe);
+    pipeEl.appendChild(b);
+  });
+  pipeEl.addEventListener('click',e=>{
+    const b = e.target.closest('button'); if(!b) return;
+    pipe = +b.dataset.d;
+    pipeEl.querySelectorAll('button').forEach(x=>x.setAttribute('aria-pressed', x===b));
+    calcBed();
+  });
+
+  function calcBed(){
+    const run = num('run'), dens = num('d-bed'), waste = 1 + num('waste-b')/100;
+    if(run<=0){
+      $('bed-t').innerHTML = '0.0<span>t</span>';
+      $('bed-detail').textContent = 'Pick a pipe size and enter a length';
+      $('bed-loads').textContent = '';
+      return;
+    }
+    const m3 = BED[pipe]*run;
+    const t = m3 * dens * waste;
+    $('bed-t').innerHTML = fmt1(t)+'<span>t</span>';
+    $('bed-detail').textContent = `${pipe} mm × ${run} m · ${m3.toFixed(2)} m³`;
+    $('bed-loads').textContent = loadsText(t, num('wagon'));
+  }
+  ['run','d-bed','waste-b'].forEach(id=>$(id).addEventListener('input',calcBed));
+
+  calcTarmac(); calcBed();
+</script>
+</body>
+</html>

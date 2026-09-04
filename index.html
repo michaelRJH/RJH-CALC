@@ -178,9 +178,11 @@
 
     <div class="btnrow">
       <button class="btn primary" type="button" id="g-share">Share PDF</button>
+      <button class="btn primary" type="button" id="g-download">Download PDF</button>
+      <button class="btn" type="button" id="g-open">Open PDF</button>
       <button class="btn" type="button" id="g-copy">Copy summary</button>
     </div>
-    <p class="note">Share PDF opens your phone's share sheet so you can send it by WhatsApp or email. On a laptop it downloads the file.</p>
+    <p class="note" id="g-status">Share sends it straight to WhatsApp or email. Download saves it to your phone or laptop. Open shows it on screen first.</p>
   </section>
 
   <footer>R.J. Howard Engineers Ltd, Howard House, Lowfields Road, Leeds LS12 6BS. Site estimating and setting-out aid only. Check against the drawings.<br>Tip: open this link in Safari or Chrome and choose "Add to Home Screen" to keep it as an app.</footer>
@@ -296,208 +298,249 @@
   }
   ['g-from','g-to','g-by','g-date','g-site','g-cl1','g-cl2','g-il1','g-il2','g-len','g-dia','g-act','g-rock','g-notes'].forEach(id=>$(id).addEventListener('input',calcGrad));
 
-  // ---- Long section sketch ----
-  // Returns drawing primitives in a WxH box (any units). Vertical scale exaggerated.
-  function sectionGeom(W,H){
-    const m=W*0.03, mhW=Math.max(8,W*0.045), top=H*0.20, bot=H-H*0.27;   // headroom for labels, bottom band for dimensions
-    const x1=m+mhW, x2=W-m-mhW;                                  // pipe start/end x
+  // ---- Long section geometry (shared by screen and PDF) ----
+  function sectionGeom(W,H,opts={}){
+    const padL=opts.padL??W*0.04, padR=opts.padR??W*0.04, top=opts.top??H*0.22, bot=opts.bot??H*0.78;
+    const mhW=opts.mhW??Math.max(8,W*0.045);
+    const x1=padL+mhW, x2=W-padR-mhW;
     const cl1=isNaN(G.cl1)?G.il1+1.2:G.cl1, cl2=isNaN(G.cl2)?G.il2+1.2:G.cl2;
-    const lo=Math.min(G.il1,G.il2), hi=Math.max(cl1,cl2);
-    const span=Math.max(hi-lo,0.5);
+    const lo=Math.min(G.il1,G.il2), hi=Math.max(cl1,cl2), span=Math.max(hi-lo,0.5);
     const Y=v=>bot-((v-lo)/span)*(bot-top);
-    const p={W,H,mhW,x1,x2,top,bot,
-      mh1:{x:m,cl:Y(cl1),il:Y(G.il1),hasCl:!isNaN(G.cl1)},
-      mh2:{x:x2,cl:Y(cl2),il:Y(G.il2),hasCl:!isNaN(G.cl2)},
+    return {W,H,mhW,x1,x2,top,bot,Y,
+      mh1:{x:padL,cl:Y(cl1),il:Y(G.il1),hasCl:!isNaN(G.cl1),clv:G.cl1,ilv:G.il1,name:G.from},
+      mh2:{x:x2,cl:Y(cl2),il:Y(G.il2),hasCl:!isNaN(G.cl2),clv:G.cl2,ilv:G.il2,name:G.to},
       pipe:{x1,y1:Y(G.il1),x2,y2:Y(G.il2)},
-      junctions:G.junctions.map(j=>{const t=Math.min(Math.max(j.dist/G.len,0),1); return {...j,x:x1+t*(x2-x1),y:Y(G.il1+j.dist*G.grad)};})
-    };
-    return p;
+      junctions:G.junctions.map(j=>{const t=Math.min(Math.max(j.dist/G.len,0),1); return {...j,x:x1+t*(x2-x1),y:Y(G.il1+j.dist*G.grad)};})};
   }
+  // perpendicular offset for a double-line pipe
+  function pipePoly(p,half){ const dx=p.x2-p.x1, dy=p.y2-p.y1, L=Math.hypot(dx,dy)||1, nx=-dy/L*half, ny=dx/L*half;
+    return [[p.x1+nx,p.y1+ny],[p.x2+nx,p.y2+ny],[p.x2-nx,p.y2-ny],[p.x1-nx,p.y1-ny]]; }
+
+  // ---- Screen sketch (SVG) ----
   function sketchSVG(){
-    const W=520,H=230; if(!G.valid) return '<svg viewBox="0 0 520 230" width="100%"><text x="260" y="120" text-anchor="middle" font-size="14" fill="#4A4A46">Enter levels to see the section</text></svg>';
-    const g=sectionGeom(W,H); const f='font-family:Barlow,system-ui,sans-serif';
-    const mh=(m,name)=>`<rect x="${m.x}" y="${m.cl}" width="${g.mhW}" height="${m.il-m.cl+8}" fill="#fff" stroke="#161616" stroke-width="2"/>
-      <text x="${m.x+g.mhW/2}" y="${m.cl-8}" text-anchor="middle" font-size="15" font-weight="700" style="${f}">${name}</text>
-      <text x="${m===g.mh1?m.x:m.x+g.mhW}" y="${m.cl-24}" text-anchor="${m===g.mh1?'start':'end'}" font-size="11" fill="#4A4A46" style="${f}">${m.hasCl?'CL '+fmt3(m===g.mh1?G.cl1:G.cl2):''}</text>`;
-    let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">`;
-    // ground line
-    s+=`<line x1="${g.mh1.x}" y1="${g.mh1.cl}" x2="${g.mh2.x+g.mhW}" y2="${g.mh2.cl}" stroke="#8a8a84" stroke-width="1.5" stroke-dasharray="6 4"/>`;
-    // pipe
-    const th=Math.max(4,Math.min(12,(G.dia||150)/25));
-    s+=`<line x1="${g.pipe.x1}" y1="${g.pipe.y1}" x2="${g.pipe.x2}" y2="${g.pipe.y2}" stroke="#161616" stroke-width="${th}" stroke-linecap="butt"/>`;
-    s+=mh(g.mh1,G.from)+mh(g.mh2,G.to);
-    // IL labels
-    s+=`<text x="${g.pipe.x1+6}" y="${g.pipe.y1+22}" font-size="11" fill="#4A4A46" style="${f}">IL ${fmt3(G.il1)}</text>`;
-    s+=`<text x="${g.pipe.x2-6}" y="${g.pipe.y2+22}" text-anchor="end" font-size="11" fill="#4A4A46" style="${f}">IL ${fmt3(G.il2)}</text>`;
-    // gradient label mid-pipe
+    const W=560,H=250;
+    if(!G.valid) return `<svg viewBox="0 0 ${W} ${H}" width="100%"><text x="${W/2}" y="${H/2}" text-anchor="middle" font-size="14" fill="#4A4A46">Enter levels to see the section</text></svg>`;
+    const g=sectionGeom(W,H,{top:H*0.24,bot:H*0.70}); const f='font-family:Barlow,system-ui,sans-serif';
+    let s=`<svg viewBox="0 0 ${W} ${H}" width="100%" style="display:block">
+      <defs><pattern id="hatch" width="7" height="7" patternUnits="userSpaceOnUse" patternTransform="rotate(45)"><line x1="0" y1="0" x2="0" y2="7" stroke="#B9B7AE" stroke-width="1"/></pattern></defs>`;
+    // ground band with hatch
+    const gy1=g.mh1.cl, gy2=g.mh2.cl;
+    s+=`<polygon points="${g.mh1.x+g.mhW},${gy1} ${g.mh2.x},${gy2} ${g.mh2.x},${gy2+9} ${g.mh1.x+g.mhW},${gy1+9}" fill="url(#hatch)"/>`;
+    s+=`<line x1="${g.mh1.x-6}" y1="${gy1}" x2="${g.mh2.x+g.mhW+6}" y2="${gy2}" stroke="#161616" stroke-width="1.5"/>`;
+    // pipe double line
+    const half=Math.max(2.5,Math.min(9,(G.dia||150)/40));
+    const poly=pipePoly(g.pipe,half).map(p=>p.join(',')).join(' ');
+    s+=`<polygon points="${poly}" fill="#EFEEE9" stroke="#161616" stroke-width="1.6"/>`;
+    // manholes
+    const mh=m=>{ const h=m.il-m.cl; return `<rect x="${m.x}" y="${m.cl}" width="${g.mhW}" height="${h+6}" fill="#fff" stroke="#161616" stroke-width="1.8"/>
+      <rect x="${m.x-4}" y="${m.cl-4}" width="${g.mhW+8}" height="5" fill="#161616"/>
+      <rect x="${m.x-2}" y="${m.il+6}" width="${g.mhW+4}" height="4" fill="#161616"/>
+      <line x1="${m.x}" y1="${m.il}" x2="${m.x+g.mhW}" y2="${m.il}" stroke="#161616" stroke-width="1" stroke-dasharray="3 2"/>
+      <text x="${m.x+g.mhW/2}" y="${m.cl-12}" text-anchor="middle" font-size="15" font-weight="700" style="${f}">${m.name}</text>
+      <text x="${m.x+g.mhW/2}" y="${m.cl-27}" text-anchor="middle" font-size="10.5" fill="#4A4A46" style="${f}">${m.hasCl?'CL '+fmt3(m.clv):''}</text>
+      <text x="${m.x+g.mhW/2}" y="${m.il+24}" text-anchor="middle" font-size="10.5" fill="#4A4A46" style="${f}">IL ${fmt3(m.ilv)}</text>`; };
+    s+=mh(g.mh1)+mh(g.mh2);
+    // gradient tag under pipe midpoint
     const mx=(g.pipe.x1+g.pipe.x2)/2, my=(g.pipe.y1+g.pipe.y2)/2;
-    s+=`<rect x="${mx-52}" y="${my+12}" width="104" height="20" rx="3" fill="#F2A900"/><text x="${mx}" y="${my+26}" text-anchor="middle" font-size="13" font-weight="700" style="${f}">${G.pct>0?'+':''}${G.pct.toFixed(2)}%  ·  ${G.dia?G.dia+'Ø':''}</text>`;
-    // junctions
+    const tag=`${G.pct>0?'+':''}${G.pct.toFixed(2)}%  ·  1 in ${G.oneIn?G.oneIn.toFixed(0):'–'}  ·  ${G.dia?G.dia+'Ø':''}`;
+    s+=`<rect x="${mx-78}" y="${my+half+8}" width="156" height="20" rx="3" fill="#F2A900"/><text x="${mx}" y="${my+half+22}" text-anchor="middle" font-size="12.5" font-weight="700" style="${f}">${tag}</text>`;
+    // junctions: stub up-left at 60deg, label above
     g.junctions.forEach((j,i)=>{
-      const ly=j.y-(i%2===0?26:46);
-      s+=`<line x1="${j.x}" y1="${j.y}" x2="${j.x+8}" y2="${ly+6}" stroke="#161616" stroke-width="3"/>`;
-      s+=`<circle cx="${j.x}" cy="${j.y}" r="4" fill="#F2A900" stroke="#161616" stroke-width="2"/>`;
+      const lift=i%2===0?30:48; const sx=j.x-8, sy=j.y-half-lift+10;
+      s+=`<line x1="${j.x}" y1="${j.y-half}" x2="${sx}" y2="${sy}" stroke="#161616" stroke-width="4" stroke-linecap="round"/>`;
+      s+=`<line x1="${j.x}" y1="${j.y-half}" x2="${sx}" y2="${sy}" stroke="#EFEEE9" stroke-width="1.6" stroke-linecap="round"/>`;
+      s+=`<circle cx="${j.x}" cy="${j.y}" r="4" fill="#F2A900" stroke="#161616" stroke-width="1.6"/>`;
       const right=(j.x-g.x1)/(g.x2-g.x1)>0.85;
-      s+=`<text x="${right?j.x-4:j.x+10}" y="${ly+3}" text-anchor="${right?'end':'start'}" font-size="12" font-weight="700" style="${f}">${j.ref} ${j.dia!=='–'?j.dia+'Ø':''}</text>`;
+      s+=`<text x="${right?sx-4:sx+4}" y="${sy-4}" text-anchor="${right?'end':'start'}" font-size="12" font-weight="700" style="${f}">${j.ref}${j.dia!=='–'?' · '+j.dia+'Ø':''}</text>`;
     });
-    // dimension line
-    const dy=g.bot+38;
-    s+=`<line x1="${g.x1}" y1="${dy}" x2="${g.x2}" y2="${dy}" stroke="#161616" stroke-width="1"/>`;
-    const tick=x=>`<line x1="${x}" y1="${dy-5}" x2="${x}" y2="${dy+5}" stroke="#161616" stroke-width="1"/>`;
-    s+=tick(g.x1)+tick(g.x2);
+    // dimension line with oblique ticks
+    const dy=H*0.88;
+    const tick=x=>`<line x1="${x-3}" y1="${dy+3}" x2="${x+3}" y2="${dy-3}" stroke="#161616" stroke-width="1.4"/><line x1="${x}" y1="${dy-10}" x2="${x}" y2="${dy+4}" stroke="#8a8a84" stroke-width=".8"/>`;
+    s+=`<line x1="${g.x1}" y1="${dy}" x2="${g.x2}" y2="${dy}" stroke="#161616" stroke-width="1"/>`+tick(g.x1)+tick(g.x2);
     let prev=g.x1, prevD=0;
-    g.junctions.forEach(j=>{ s+=tick(j.x); const cx=(prev+j.x)/2; s+=`<text x="${cx}" y="${dy-7}" text-anchor="middle" font-size="10.5" fill="#4A4A46" style="${f}">${(j.dist-prevD).toFixed(2)}</text>`; prev=j.x; prevD=j.dist; });
-    s+=`<text x="${(prev+g.x2)/2}" y="${dy-7}" text-anchor="middle" font-size="10.5" fill="#4A4A46" style="${f}">${(G.len-prevD).toFixed(2)}</text>`;
-    s+=`<text x="${(g.x1+g.x2)/2}" y="${dy+14}" text-anchor="middle" font-size="11" font-weight="600" style="${f}">${G.len} m total · distances between junctions (m)</text>`;
+    const seg=(a,b,txt)=>`<text x="${(a+b)/2}" y="${dy-4}" text-anchor="middle" font-size="10.5" font-weight="600" style="${f}">${txt}</text>`;
+    g.junctions.forEach(j=>{ s+=tick(j.x)+seg(prev,j.x,(j.dist-prevD).toFixed(2)); prev=j.x; prevD=j.dist; });
+    s+=seg(prev,g.x2,(G.len-prevD).toFixed(2));
+    s+=`<text x="${(g.x1+g.x2)/2}" y="${dy+16}" text-anchor="middle" font-size="10.5" fill="#4A4A46" style="${f}">${G.len} m ${g.mh1.name} to ${g.mh2.name} · distances between junctions · not to scale</text>`;
     return s+'</svg>';
   }
   function drawSketch(){ $('g-sketch').innerHTML=sketchSVG(); }
-  function pdfSketch(doc,x0,y0,W,H){
-    const g=sectionGeom(W,H); const INK=[22,22,22], GREY=[74,74,70];
-    const X=x=>x0+x, Y=y=>y0+y;
-    doc.setDrawColor(...INK); doc.setLineWidth(0.3); doc.rect(x0,y0,W,H);
-    doc.setDrawColor(140,140,132); doc.setLineDashPattern([1.5,1],0); doc.setLineWidth(0.3); doc.line(X(g.mh1.x),Y(g.mh1.cl),X(g.mh2.x+g.mhW),Y(g.mh2.cl)); doc.setLineDashPattern([],0);
-    doc.setDrawColor(...INK); doc.setLineWidth(Math.max(1,Math.min(3,(G.dia||150)/75))); doc.line(X(g.pipe.x1),Y(g.pipe.y1),X(g.pipe.x2),Y(g.pipe.y2));
-    doc.setLineWidth(0.5); doc.setFillColor(255,255,255);
-    const mh=(m,name,cl)=>{ doc.setFillColor(255,255,255); doc.setDrawColor(...INK); doc.rect(X(m.x),Y(m.cl),g.mhW,m.il-m.cl+2,'FD'); doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...INK); doc.text(name,X(m.x+g.mhW/2),Y(m.cl)-2,{align:'center'});
-      if(m.hasCl){doc.setFont('helvetica','normal');doc.setFontSize(6.5);doc.setTextColor(...GREY);doc.text('CL '+fmt3(cl),X(m===g.mh1?m.x:m.x+g.mhW),Y(m.cl)-6,{align:m===g.mh1?'left':'right'});} };
-    mh(g.mh1,G.from,G.cl1); mh(g.mh2,G.to,G.cl2);
-    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...GREY);
-    doc.text('IL '+fmt3(G.il1),X(g.pipe.x1)+1.5,Y(g.pipe.y1)+5); doc.text('IL '+fmt3(G.il2),X(g.pipe.x2)-1.5,Y(g.pipe.y2)+5,{align:'right'});
-    const mx=(g.pipe.x1+g.pipe.x2)/2, my=(g.pipe.y1+g.pipe.y2)/2;
-    doc.setFillColor(242,169,0); doc.roundedRect(X(mx)-16,Y(my)+3,32,5.5,0.8,0.8,'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...INK); doc.text(`${G.pct>0?'+':''}${G.pct.toFixed(2)}%  ${G.dia?G.dia+' mm':''}`,X(mx),Y(my)+7,{align:'center'});
-    g.junctions.forEach((j,i)=>{ const ly=j.y-(i%2===0?7:13);
-      doc.setDrawColor(...INK); doc.setLineWidth(0.8); doc.line(X(j.x),Y(j.y),X(j.x)+2.5,Y(ly)+2);
-      doc.setFillColor(242,169,0); doc.setLineWidth(0.5); doc.circle(X(j.x),Y(j.y),1.2,'FD');
-      doc.setFont('helvetica','bold'); doc.setFontSize(7.5); const right=(j.x-g.x1)/(g.x2-g.x1)>0.85; doc.text(`${j.ref} ${j.dia!=='–'?j.dia+' mm':''}`,X(j.x)+(right?-1.5:3.5),Y(ly)+1,{align:right?'right':'left'}); });
-    const dy=g.bot+10; doc.setDrawColor(...INK); doc.setLineWidth(0.3); doc.line(X(g.x1),Y(dy),X(g.x2),Y(dy));
-    const tick=x=>doc.line(X(x),Y(dy)-1.5,X(x),Y(dy)+1.5); tick(g.x1); tick(g.x2);
-    doc.setFont('helvetica','normal'); doc.setFontSize(6.5); doc.setTextColor(...GREY);
-    let prev=g.x1, prevD=0;
-    g.junctions.forEach(j=>{ tick(j.x); doc.text((j.dist-prevD).toFixed(2),X((prev+j.x)/2),Y(dy)-2,{align:'center'}); prev=j.x; prevD=j.dist; });
-    doc.text((G.len-prevD).toFixed(2),X((prev+g.x2)/2),Y(dy)-2,{align:'center'});
-    doc.setFont('helvetica','bold'); doc.text(`${G.len} m total  ·  distances between junctions in metres  ·  not to scale`,X((g.x1+g.x2)/2),Y(dy)+4,{align:'center'});
-  }
-
-  function summaryText(){
-    if(!G.valid) return '';
-    let s=`RJH PIPE GRADIENT\n${G.site?G.site+'\n':''}Run ${G.from} to ${G.to}${G.dia?' · '+G.dia+' mm':''}\n`+
-      `IL ${G.from}: ${fmt3(G.il1)}   IL ${G.to}: ${fmt3(G.il2)}   Dist: ${G.len} m\n`+
-      (isNaN(G.cl1)&&isNaN(G.cl2)?'':`CL ${G.from}: ${isNaN(G.cl1)?'–':fmt3(G.cl1)} (depth ${isNaN(G.cl1)?'–':fmt3(G.cl1-G.il1)})   CL ${G.to}: ${isNaN(G.cl2)?'–':fmt3(G.cl2)} (depth ${isNaN(G.cl2)?'–':fmt3(G.cl2-G.il2)})\n`)+
-      `Gradient: ${G.pct>0?'+':''}${G.pct.toFixed(2)} % (1 in ${G.oneIn?G.oneIn.toFixed(0):'–'}, laying ${G.dir})   ${G.fall>0?'Rise':'Fall'}: ${Math.abs(G.fall*1000).toFixed(0)} mm\n`;
-    if(G.rockDiff!==null) s+=`Actual IL ${G.from}: ${fmt3(G.act)}   Rocker takes up ${Math.abs(G.rockDiff).toFixed(0)} mm (${G.rockDiff>0?'low':'high'})\n`;
-    if(G.junctions.length){ s+='Junctions:\n'; G.junctions.forEach(j=>s+=`  ${j.ref}  ${j.dist} m  ${j.dia} mm  IL ${fmt3(j.il)}\n`); }
-    if(G.notes) s+=`Notes: ${G.notes}\n`;
-    s+=`${G.by?G.by+' · ':''}${G.date}`;
-    return s;
-  }
-  $('g-copy').addEventListener('click',async()=>{
-    if(!G.valid){toast('Enter the levels first');return;}
-    try{await navigator.clipboard.writeText(summaryText());toast('Copied');}catch(e){toast('Could not copy');}
-  });
 
   // ---- PDF ----
   function fmtDate(iso){ if(!iso) return ''; const [y,m,d]=iso.split('-'); return `${d}/${m}/${y}`; }
+  const INK=[22,22,22], GREY=[74,74,70], LINE=[216,214,207], HIVIS=[242,169,0], PAPER=[247,246,242], FILL=[239,238,233];
+  function pdfHeader(doc,title,sub){
+    const W=210,M=16;
+    doc.addImage('data:image/png;base64,'+LOGO_B64,'PNG',M,14,80,12.5);
+    doc.setFont('helvetica','bold'); doc.setFontSize(16); doc.setTextColor(...INK); doc.text(title,W-M,20,{align:'right'});
+    doc.setFont('helvetica','normal'); doc.setFontSize(8.5); doc.setTextColor(...GREY); doc.text(sub,W-M,26,{align:'right'});
+    doc.setDrawColor(...HIVIS); doc.setLineWidth(1.2); doc.line(M,32,W-M,32);
+    doc.setDrawColor(...INK); doc.setLineWidth(0.4); doc.line(M,34,W-M,34);
+    return 42;
+  }
+  function pdfFooter(doc,sheet,of){
+    const W=210,M=16;
+    doc.setFillColor(...INK); doc.rect(0,284,W,13,'F');
+    doc.setTextColor(...PAPER); doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.text('R.J. HOWARD ENGINEERS LTD',M,289.5);
+    doc.setFont('helvetica','normal'); doc.text('Howard House, Lowfields Road, Leeds LS12 6BS  ·  Civil Engineering Contractors since 1967',M,293.5);
+    doc.text(`Sheet ${sheet} of ${of}`,W-M,289.5,{align:'right'});
+    doc.text('Site setting-out record. Check against the drawings.',W-M,293.5,{align:'right'});
+  }
+  // labelled cell grid
+  function cellRow(doc,x,y,w,h,cells){ // cells: [{label,value,w}]
+    let cx=x;
+    cells.forEach(c=>{ doc.setFillColor(...PAPER); doc.setDrawColor(...LINE); doc.setLineWidth(0.3); doc.rect(cx,y,c.w,h,'FD');
+      doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...GREY); doc.text(c.label.toUpperCase(),cx+2.5,y+4);
+      doc.setFont('helvetica',c.bold?'bold':'normal'); doc.setFontSize(c.size||10.5); doc.setTextColor(...INK); doc.text(String(c.value),cx+2.5,y+h-3); cx+=c.w; });
+    return y+h;
+  }
+  function pdfSection(doc,x0,y0,W,H){
+    const g=sectionGeom(W,H,{top:H*0.10,bot:H*0.56,mhW:9,padL:32,padR:8});
+    const X=x=>x0+x, Y=y=>y0+y;
+    doc.setDrawColor(...INK); doc.setLineWidth(0.4); doc.rect(x0,y0,W,H);
+    // ground hatch
+    doc.setDrawColor(185,183,174); doc.setLineWidth(0.25);
+    const gx1=g.mh1.x+g.mhW, gx2=g.mh2.x, gy=x=>g.mh1.cl+(g.mh2.cl-g.mh1.cl)*(x-gx1)/(gx2-gx1);
+    for(let x=gx1;x<gx2;x+=2.2){ doc.line(X(x),Y(gy(x)),X(Math.max(x-2.2,gx1)),Y(gy(x)+2.2)); }
+    doc.setDrawColor(...INK); doc.setLineWidth(0.5); doc.line(X(g.mh1.x-2),Y(g.mh1.cl),X(g.mh2.x+g.mhW+2),Y(g.mh2.cl));
+    // pipe double line
+    const half=Math.max(0.9,Math.min(3.2,(G.dia||150)/110));
+    const pp=pipePoly(g.pipe,half);
+    doc.setFillColor(...FILL); doc.setDrawColor(...INK); doc.setLineWidth(0.5);
+    doc.lines(pp.slice(1).map((p,i)=>[p[0]-pp[i][0],p[1]-pp[i][1]]).concat([[pp[0][0]-pp[3][0],pp[0][1]-pp[3][1]]]),X(pp[0][0]),Y(pp[0][1]),[1,1],'FD',true);
+    // manholes
+    const mh=m=>{ doc.setFillColor(255,255,255); doc.setDrawColor(...INK); doc.setLineWidth(0.5); doc.rect(X(m.x),Y(m.cl),g.mhW,(m.il-m.cl)+2.5,'FD');
+      doc.setFillColor(...INK); doc.rect(X(m.x)-1.2,Y(m.cl)-1.4,g.mhW+2.4,1.6,'F'); doc.rect(X(m.x)-0.6,Y(m.il)+2.5,g.mhW+1.2,1.4,'F');
+      doc.setLineDashPattern([1,0.8],0); doc.setLineWidth(0.3); doc.line(X(m.x),Y(m.il),X(m.x)+g.mhW,Y(m.il)); doc.setLineDashPattern([],0);
+      doc.setFont('helvetica','bold'); doc.setFontSize(9); doc.setTextColor(...INK); doc.text(m.name,X(m.x)+g.mhW/2,Y(m.cl)-4,{align:'center'}); };
+    mh(g.mh1); mh(g.mh2);
+    // gradient tag
+    const mx=(g.pipe.x1+g.pipe.x2)/2, my=(g.pipe.y1+g.pipe.y2)/2;
+    const tag=`${G.pct>0?'+':''}${G.pct.toFixed(2)} %   1 in ${G.oneIn?G.oneIn.toFixed(0):'–'}   ${G.dia?G.dia+' mm':''}`;
+    doc.setFillColor(...HIVIS); doc.roundedRect(X(mx)-24,Y(my)+half+2.5,48,6,0.8,0.8,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...INK); doc.text(tag,X(mx),Y(my)+half+6.7,{align:'center'});
+    // junctions
+    g.junctions.forEach((j,i)=>{ const lift=i%2===0?9:15; const sx=j.x-2.5, sy=j.y-half-lift+3;
+      doc.setDrawColor(...INK); doc.setLineWidth(1.3); doc.line(X(j.x),Y(j.y-half),X(sx),Y(sy));
+      doc.setDrawColor(...FILL); doc.setLineWidth(0.5); doc.line(X(j.x),Y(j.y-half),X(sx),Y(sy));
+      doc.setFillColor(...HIVIS); doc.setDrawColor(...INK); doc.setLineWidth(0.4); doc.circle(X(j.x),Y(j.y),1.1,'FD');
+      const right=(j.x-g.x1)/(g.x2-g.x1)>0.85;
+      doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...INK); doc.text(`${j.ref}${j.dia!=='–'?'  '+j.dia+' mm':''}`,X(sx)+(right?-1.2:1.2),Y(sy)-1.2,{align:right?'right':'left'}); });
+    // level band (long-section style)
+    const rows=[['Chainage (m)',p=>p.d.toFixed(2)],['Invert level (m)',p=>fmt3(p.il)],['Cover level (m)',p=>isNaN(p.cl)?'–':fmt3(p.cl)],['Depth (m)',p=>isNaN(p.cl)?'–':fmt3(p.cl-p.il)]];
+    const pts=[{x:g.x1,d:0,il:G.il1,cl:G.cl1,n:G.from},...g.junctions.map(j=>({x:j.x,d:j.dist,il:j.il,cl:NaN,n:j.ref})),{x:g.x2,d:G.len,il:G.il2,cl:G.cl2,n:G.to}];
+    const bandTop=H*0.65, rh=(H-bandTop-2)/(rows.length+1);
+    doc.setDrawColor(...LINE); doc.setLineWidth(0.3);
+    doc.line(X(0),Y(bandTop),X(W),Y(bandTop));
+    rows.forEach((r,i)=>{ const yy=bandTop+rh*(i+1); doc.line(X(0),Y(yy),X(W),Y(yy)); doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.setTextColor(...GREY); doc.text(r[0].toUpperCase(),X(3),Y(yy)-rh/2+1); });
+    doc.setFont('helvetica','bold'); doc.setFontSize(6); doc.text('REF',X(3),Y(bandTop+rh*(rows.length+1))-rh/2+1);
+    doc.setDrawColor(...LINE); doc.line(X(29),Y(bandTop),X(29),Y(H));
+    pts.forEach(p=>{ doc.setDrawColor(...LINE); doc.setLineWidth(0.25); doc.line(X(p.x),Y(g.bot+2),X(p.x),Y(H));
+      rows.forEach((r,i)=>{ const t=r[1](p), ty=bandTop+rh*(i+1)-rh/2+1; doc.setFont('helvetica','normal'); doc.setFontSize(7); const tw=doc.getTextWidth(t)+1.6; doc.setFillColor(255,255,255); doc.rect(X(p.x)-tw/2,Y(ty)-2.6,tw,3.6,'F'); doc.setTextColor(...INK); doc.text(t,X(p.x),Y(ty),{align:'center'}); });
+      { const ty=bandTop+rh*(rows.length+1)-rh/2+1; doc.setFont('helvetica','bold'); const tw=doc.getTextWidth(p.n)+1.6; doc.setFillColor(255,255,255); doc.rect(X(p.x)-tw/2,Y(ty)-2.6,tw,3.6,'F'); doc.setTextColor(...INK); doc.text(p.n,X(p.x),Y(ty),{align:'center'}); } });
+    doc.setFont('helvetica','normal'); doc.setFontSize(6); doc.setTextColor(...GREY); doc.text('NOT TO SCALE  ·  VERTICAL EXAGGERATED',X(W-3),Y(bandTop)-1.5,{align:'right'});
+  }
   function buildPdf(){
     const {jsPDF}=window.jspdf; const doc=new jsPDF({unit:'mm',format:'a4'});
-    const W=210, M=16, INK=[22,22,22], GREY=[74,74,70], LINE=[216,214,207], HIVIS=[242,169,0];
-    let y=M;
-    // header
-    doc.addImage('data:image/png;base64,'+LOGO_B64,'PNG',M,y,85,13.3);
-    doc.setFont('helvetica','bold'); doc.setFontSize(17); doc.setTextColor(...INK);
-    doc.text('PIPE GRADIENT SHEET',W-M,y+6.5,{align:'right'});
-    doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...GREY);
-    doc.text(`Ref ${G.from}-${G.to}  ·  ${fmtDate(G.date)}`,W-M,y+13,{align:'right'});
-    y+=22; doc.setDrawColor(...INK); doc.setLineWidth(1); doc.line(M,y,W-M,y); y+=8;
-
-    // run block
-    const label=(t,x,yy)=>{doc.setFont('helvetica','bold');doc.setFontSize(7.5);doc.setTextColor(...GREY);doc.text(t.toUpperCase(),x,yy);};
-    const value=(t,x,yy,size=13)=>{doc.setFont('helvetica','normal');doc.setFontSize(size);doc.setTextColor(...INK);doc.text(String(t),x,yy);};
-    const col=(W-2*M)/4;
-    label('Site',M,y); value(G.site||'–',M,y+6,11);
-    label('Drainage run',M+col*2,y); value(`${G.from}  to  ${G.to}`,M+col*2,y+6,11);
-    label('By',M+col*3,y); value(G.by||'–',M+col*3,y+6,11);
-    y+=14;
-    label('Pipe diameter',M,y); value(G.dia?G.dia+' mm':'–',M,y+6,11);
-    label('Distance',M+col,y); value(G.len+' m',M+col,y+6,11);
-    label('Laying',M+col*2,y); value(G.dir.charAt(0).toUpperCase()+G.dir.slice(1),M+col*2,y+6,11);
-    y+=14;
-    // manhole table
-    const mh=(name,cl,il,x)=>{ label('Manhole '+name,x,y);
-      label('Cover level',x,y+7); value(isNaN(cl)?'–':fmt3(cl)+' m',x+22,y+7,10);
-      label('Invert level',x,y+13); value(fmt3(il)+' m',x+22,y+13,10);
-      label('Depth',x,y+19); value(isNaN(cl)?'–':fmt3(cl-il)+' m',x+22,y+19,10); };
-    mh(G.from,G.cl1,G.il1,M); mh(G.to,G.cl2,G.il2,M+col*2);
-    y+=24;
-
-    // result band
-    doc.setFillColor(...HIVIS); doc.roundedRect(M,y,W-2*M,31,1.5,1.5,'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(...INK); doc.text('GRADIENT FOR PIPE LASER',M+6,y+8);
-    doc.setFontSize(30); doc.text(`${G.pct>0?'+':''}${G.pct.toFixed(2)} %`,M+6,y+23);
-    doc.setFontSize(10); doc.setFont('helvetica','normal');
-    const rx=M+95;
-    doc.text(`Gradient`,rx,y+9); doc.setFont('helvetica','bold'); doc.text(G.oneIn?`1 in ${G.oneIn.toFixed(0)} (${G.dir})`:'level',W-M-6,y+9,{align:'right'}); doc.setFont('helvetica','normal');
-    doc.text(G.fall>0?`Rise over run`:`Fall over run`,rx,y+15); doc.setFont('helvetica','bold'); doc.text(`${Math.abs(G.fall*1000).toFixed(0)} mm`,W-M-6,y+15,{align:'right'}); doc.setFont('helvetica','normal');
-    doc.text(`Actual IL at ${G.from}`,rx,y+21); doc.setFont('helvetica','bold'); doc.text(G.rockDiff===null?'–':fmt3(G.act)+' m',W-M-6,y+21,{align:'right'}); doc.setFont('helvetica','normal');
-    doc.text(`Fall in rocker`,rx,y+27); doc.setFont('helvetica','bold');
-    doc.text(G.rockDiff===null?'–':(Math.abs(G.rockDiff)<0.5?'0 mm':`${Math.abs(G.rockDiff).toFixed(0)} mm (actual ${G.rockDiff>0?'low':'high'})`),W-M-6,y+27,{align:'right'});
-    y+=36;
-    // check line
-    doc.setFont('helvetica','bold'); doc.setFontSize(9);
-    if(G.check==='OK'){ doc.setTextColor(30,122,60); doc.text('CHECK: OK  ·  '+$('g-flag').textContent,M,y); }
-    else { doc.setTextColor(179,38,30); doc.text($('g-flag').textContent.toUpperCase(),M,y); }
+    const W=210,M=16,CW=W-2*M;
+    const sub=`Ref ${G.from}-${G.to}  ·  ${fmtDate(G.date)}${G.site?'  ·  '+G.site:''}`;
+    // ===== SHEET 1 =====
+    let y=pdfHeader(doc,'PIPE GRADIENT SHEET',sub);
+    y=cellRow(doc,M,y,CW,11,[{label:'Site',value:G.site||'–',w:CW*0.46},{label:'Drainage run',value:`${G.from}  to  ${G.to}`,w:CW*0.24,bold:true},{label:'Set out by',value:G.by||'–',w:CW*0.18},{label:'Date',value:fmtDate(G.date),w:CW*0.12}]);
+    y=cellRow(doc,M,y,CW,11,[{label:'Pipe diameter',value:G.dia?G.dia+' mm':'–',w:CW*0.2},{label:'Distance '+G.from+' to '+G.to,value:G.len+' m',w:CW*0.26},{label:'Laying direction',value:G.dir.charAt(0).toUpperCase()+G.dir.slice(1)+' from '+G.from,w:CW*0.3},{label:'Rocker length',value:G.rock+' mm',w:CW*0.24}]);
     y+=6;
-    doc.setTextColor(...INK); doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('LONG SECTION',M,y); y+=3;
-    pdfSketch(doc,M,y,W-2*M,54); y+=60;
-
-    // junction table
-    doc.setTextColor(...INK); doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('JUNCTIONS',M,y); y+=3;
-    doc.setDrawColor(...INK); doc.setLineWidth(0.6); doc.line(M,y,W-M,y); y+=6;
-    const cols=[M, M+30, M+80, M+115, W-M]; // ref, dist, dia, IL(right)
-    doc.setFontSize(7.5); doc.setTextColor(...GREY);
-    doc.text('REF',cols[0],y); doc.text('DISTANCE FROM '+G.from.toUpperCase(),cols[1],y); doc.text('DIAMETER',cols[2],y); doc.text('INVERT LEVEL',cols[4],y,{align:'right'});
-    y+=2; doc.setDrawColor(...LINE); doc.setLineWidth(0.3); doc.line(M,y,W-M,y); y+=6;
-    doc.setFont('helvetica','normal'); doc.setFontSize(10.5); doc.setTextColor(...INK);
-    if(!G.junctions.length){ doc.setTextColor(...GREY); doc.text('No junctions recorded',M,y); y+=8; }
-    G.junctions.forEach(j=>{
-      doc.setTextColor(...INK); doc.text(j.ref,cols[0],y); doc.text(`${j.dist} m`,cols[1],y); doc.text(`${j.dia} mm`,cols[2],y);
-      doc.setFont('helvetica','bold'); doc.text(`${fmt3(j.il)} m`,cols[4],y,{align:'right'}); doc.setFont('helvetica','normal');
-      y+=2.2; doc.setDrawColor(...LINE); doc.line(M,y,W-M,y); y+=5.5;
-      if(y>268){doc.addPage();y=M;}
-    });
-    y+=4;
-    if(G.notes){ doc.setFont('helvetica','bold'); doc.setFontSize(11); doc.text('NOTES',M,y); y+=6; doc.setFont('helvetica','normal'); doc.setFontSize(10);
-      const lines=doc.splitTextToSize(G.notes,W-2*M); doc.text(lines,M,y); y+=lines.length*4.5+1; }
-
+    // result block
+    doc.setFillColor(...INK); doc.roundedRect(M,y,CW,38,1.5,1.5,'F');
+    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...HIVIS); doc.text('GRADIENT FOR PIPE LASER',M+7,y+8);
+    doc.setFontSize(34); doc.setTextColor(...HIVIS); doc.text(`${G.pct>0?'+':''}${G.pct.toFixed(2)} %`,M+7,y+25);
+    doc.setFontSize(8); doc.setFont('helvetica','normal'); doc.setTextColor(...PAPER); doc.text(`Laying ${G.dir} from ${G.from}. Set laser to ${G.pct>0?'+':''}${G.pct.toFixed(2)} %.`,M+7,y+33);
+    const rx=M+CW*0.52, rv=W-M-7; let ry=y+9;
+    const rrow=(l,v)=>{ doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...PAPER); doc.text(l,rx,ry); doc.setFont('helvetica','bold'); doc.setTextColor(255,255,255); doc.text(v,rv,ry,{align:'right'}); doc.setDrawColor(74,74,70); doc.setLineWidth(0.2); doc.line(rx,ry+2.2,rv,ry+2.2); ry+=7; };
+    rrow('Gradient',G.oneIn?`1 in ${G.oneIn.toFixed(0)}`:'level');
+    rrow(G.fall>0?'Rise over run':'Fall over run',`${Math.abs(G.fall*1000).toFixed(0)} mm`);
+    rrow(`Actual IL at ${G.from}`,G.rockDiff===null?'–':fmt3(G.act)+' m');
+    rrow('Fall in rocker',G.rockDiff===null?'–':(Math.abs(G.rockDiff)<0.5?'0 mm':`${Math.abs(G.rockDiff).toFixed(0)} mm (actual ${G.rockDiff>0?'low':'high'})`));
+    y+=44;
+    // check
+    doc.setFont('helvetica','bold'); doc.setFontSize(8.5);
+    if(G.check==='OK'){ doc.setTextColor(30,122,60); doc.text('CHECK  OK   '+$('g-flag').textContent,M,y); } else { doc.setTextColor(179,38,30); doc.text('CHECK   '+$('g-flag').textContent.toUpperCase(),M,y); }
+    y+=8;
+    // manhole table
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...INK); doc.text('MANHOLE LEVELS',M,y); y+=2.5;
+    const hw=CW/2-3;
+    const mhBlock=(x,name,cl,il,act)=>{ let yy=y;
+      yy=cellRow(doc,x,yy,hw,12,[{label:'Manhole',value:name,w:hw,bold:true}]);
+      yy=cellRow(doc,x,yy,hw,12,[{label:'Cover level',value:isNaN(cl)?'–':fmt3(cl)+' m',w:hw/2},{label:'Depth to invert',value:isNaN(cl)?'–':fmt3(cl-il)+' m',w:hw/2}]);
+      yy=cellRow(doc,x,yy,hw,12,[{label:'Proposed invert',value:fmt3(il)+' m',w:hw/2,bold:true},{label:'Actual invert',value:act===undefined?'–':fmt3(act)+' m',w:hw/2}]);
+      return yy; };
+    const y1=mhBlock(M,G.from,G.cl1,G.il1,G.rockDiff===null?undefined:G.act), y2=mhBlock(M+hw+6,G.to,G.cl2,G.il2,undefined);
+    y=Math.max(y1,y2)+8;
+    // junction schedule
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...INK); doc.text('JUNCTION SCHEDULE',M,y); y+=2.5;
+    const cols=[{label:'Ref',w:CW*0.16},{label:'Chainage from '+G.from,w:CW*0.28},{label:'Between junctions',w:CW*0.24},{label:'Diameter',w:CW*0.14},{label:'Invert level',w:CW*0.18}];
+    let cx=M; doc.setFillColor(...INK); doc.rect(M,y,CW,6,'F'); doc.setFont('helvetica','bold'); doc.setFontSize(6.5); doc.setTextColor(...PAPER);
+    cols.forEach((c,i)=>{ doc.text(c.label.toUpperCase(),i===4?cx+c.w-2.5:cx+2.5,y+4,{align:i===4?'right':'left'}); cx+=c.w; }); y+=6;
+    if(!G.junctions.length){ doc.setFont('helvetica','normal'); doc.setFontSize(9); doc.setTextColor(...GREY); doc.text('No junctions recorded on this run',M+2.5,y+6); y+=9; }
+    let prevD=0;
+    G.junctions.forEach((j,i)=>{ if(y>262){ pdfFooter(doc,1,2); doc.addPage(); y=pdfHeader(doc,'PIPE GRADIENT SHEET (CONT.)',sub); }
+      doc.setFillColor(...(i%2?PAPER:[255,255,255])); doc.setDrawColor(...LINE); doc.setLineWidth(0.25); doc.rect(M,y,CW,8,'FD');
+      const vals=[j.ref,`${j.dist.toFixed(2)} m`,`${(j.dist-prevD).toFixed(2)} m`,`${j.dia} mm`,`${fmt3(j.il)} m`]; cx=M;
+      cols.forEach((c,k)=>{ doc.setFont('helvetica',k===4||k===0?'bold':'normal'); doc.setFontSize(9.5); doc.setTextColor(...INK); doc.text(vals[k],k===4?cx+c.w-2.5:cx+2.5,y+5.5,{align:k===4?'right':'left'}); cx+=c.w; });
+      prevD=j.dist; y+=8; });
+    doc.setFillColor(...PAPER); doc.setDrawColor(...LINE); doc.rect(M,y,CW,8,'FD'); doc.setFont('helvetica','bold'); doc.setFontSize(9.5); doc.setTextColor(...INK);
+    doc.text(G.to,M+2.5,y+5.5); doc.text(`${G.len.toFixed(2)} m`,M+cols[0].w+2.5,y+5.5); doc.text(`${(G.len-prevD).toFixed(2)} m`,M+cols[0].w+cols[1].w+2.5,y+5.5); doc.text(`${fmt3(G.il2)} m`,W-M-2.5,y+5.5,{align:'right'}); y+=8;
+    y+=8;
+    if(G.notes){ doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.text('NOTES',M,y); y+=5.5; doc.setFont('helvetica','normal'); doc.setFontSize(9.5);
+      const lines=doc.splitTextToSize(G.notes,CW); doc.text(lines,M,y); y+=lines.length*4.5+4; }
     // sign-off
-    if(y>268){doc.addPage();y=M;} else y=Math.max(y,262);
+    if(y>258){ pdfFooter(doc,1,2); doc.addPage(); y=pdfHeader(doc,'PIPE GRADIENT SHEET (CONT.)',sub); } else y=Math.max(y,258);
+    const sw=(CW-10)/2;
     doc.setDrawColor(...INK); doc.setLineWidth(0.4);
-    const sw=(W-2*M-30)/4;
-    label('Set out by',M,y); doc.line(M,y+13,M+sw*1.4,y+13); value(G.by||'',M,y+11,10);
-    label('Date',M+sw*1.4+10,y); doc.line(M+sw*1.4+10,y+13,M+sw*2+10,y+13); value(fmtDate(G.date),M+sw*1.4+10,y+11,10);
-    label('Checked by',M+sw*2+20,y); doc.line(M+sw*2+20,y+13,M+sw*3.4+20,y+13);
-    label('Date',M+sw*3.4+30,y); doc.line(M+sw*3.4+30,y+13,W-M,y+13);
+    cellRow(doc,M,y,sw,18,[{label:'Set out by',value:G.by||'',w:sw*0.62},{label:'Date',value:fmtDate(G.date),w:sw*0.38}]);
+    cellRow(doc,M+sw+10,y,sw,18,[{label:'Checked by',value:'',w:sw*0.62},{label:'Date',value:'',w:sw*0.38}]);
+    pdfFooter(doc,1,2);
 
-    // footer
-    doc.setFillColor(...INK); doc.rect(0,283,W,14,'F');
-    doc.setFont('helvetica','bold'); doc.setFontSize(7.5); doc.setTextColor(247,246,242);
-    doc.text('R.J. HOWARD ENGINEERS LTD',M,289); doc.setFont('helvetica','normal');
-    doc.text('Howard House, Lowfields Road, Leeds LS12 6BS  ·  Civil Engineering Contractors since 1967',M,293.5);
-    doc.text('Gradient = (IL to - IL from) / distance x 100. + laying uphill, - laying downhill',W-M,289,{align:'right'});
-    doc.text('Site setting-out record. Check against the drawings.',W-M,293.5,{align:'right'});
+    // ===== SHEET 2: DRAWING =====
+    doc.addPage();
+    y=pdfHeader(doc,'PIPE LONG SECTION',sub);
+    doc.setFont('helvetica','bold'); doc.setFontSize(10); doc.setTextColor(...INK); doc.text(`LONG SECTION  ${G.from} TO ${G.to}`,M,y); y+=4;
+    pdfSection(doc,M,y,CW,150); y+=156;
+    // key
+    doc.setFont('helvetica','bold'); doc.setFontSize(7); doc.setTextColor(...GREY); doc.text('KEY',M,y); y+=4;
+    doc.setFont('helvetica','normal'); doc.setFontSize(7.5); doc.setTextColor(...INK);
+    doc.setFillColor(...HIVIS); doc.setDrawColor(...INK); doc.setLineWidth(0.4); doc.circle(M+2,y-1,1.1,'FD'); doc.text('Junction (branch off main run)',M+6,y);
+    doc.setFillColor(...FILL); doc.rect(M+70,y-3,8,3,'FD'); doc.text('Main run, width indicates diameter',M+81,y);
+    doc.setFillColor(...HIVIS); doc.roundedRect(M+150,y-3.5,8,4,0.6,0.6,'F'); doc.text('Laser gradient',M+161,y);
+    y+=10;
+    // title block
+    const tbY=Math.max(y,236);
+    doc.setDrawColor(...INK); doc.setLineWidth(0.5);
+    cellRow(doc,M,tbY,CW,12,[{label:'Project / site',value:G.site||'–',w:CW*0.5},{label:'Drawing title',value:`Pipe long section ${G.from} to ${G.to}`,w:CW*0.5,bold:true}]);
+    cellRow(doc,M,tbY+12,CW,12,[{label:'Drawn by',value:G.by||'–',w:CW*0.25},{label:'Date',value:fmtDate(G.date),w:CW*0.2},{label:'Pipe',value:G.dia?G.dia+' mm':'–',w:CW*0.15},{label:'Laser gradient',value:`${G.pct>0?'+':''}${G.pct.toFixed(2)} %`,w:CW*0.2,bold:true},{label:'Sheet',value:'2 of 2',w:CW*0.1},{label:'Rev',value:'A',w:CW*0.1}]);
+    doc.rect(M,tbY,CW,24);
+    pdfFooter(doc,2,2);
     return doc;
   }
+  function pdfName(){ return `RJH_Gradient_${(G.from||'run').replace(/\W/g,'')}-${(G.to||'').replace(/\W/g,'')}_${G.date}.pdf`; }
+  function ready(){ if(!G.valid){toast('Enter the levels first');return false;} if(!window.jspdf){$('g-status').textContent='The PDF tool has not loaded. Check you have signal and reload the page.';toast('PDF tool not loaded');return false;} return true; }
+  function makeBlob(){ const doc=buildPdf(); return {doc,blob:doc.output('blob')}; }
   $('g-share').addEventListener('click',async()=>{
-    if(!G.valid){toast('Enter the levels first');return;}
-    if(!window.jspdf){toast('PDF tool not loaded. Check signal and reload.');return;}
-    const doc=buildPdf();
-    const name=`RJH_Gradient_${(G.from||'run').replace(/\W/g,'')}-${(G.to||'').replace(/\W/g,'')}_${G.date}.pdf`;
-    const blob=doc.output('blob'); const file=new File([blob],name,{type:'application/pdf'});
-    if(navigator.canShare && navigator.canShare({files:[file]})){
-      try{ await navigator.share({files:[file],title:name}); return; }catch(e){ if(e.name==='AbortError') return; }
-    }
-    doc.save(name); toast('PDF downloaded');
+    if(!ready()) return;
+    try{ const {doc,blob}=makeBlob(); const name=pdfName(); const file=new File([blob],name,{type:'application/pdf'});
+      if(navigator.canShare && navigator.canShare({files:[file]})){ try{ await navigator.share({files:[file],title:name}); return; }catch(e){ if(e.name==='AbortError') return; } }
+      doc.save(name); toast('Sharing not available here, downloaded instead');
+    }catch(e){ $('g-status').textContent='PDF error: '+(e.message||e); toast('PDF error'); }
+  });
+  $('g-download').addEventListener('click',()=>{
+    if(!ready()) return;
+    try{ const {doc,blob}=makeBlob(); const name=pdfName(); const url=URL.createObjectURL(blob);
+      const a=document.createElement('a'); a.href=url; a.download=name; document.body.appendChild(a); a.click(); a.remove(); setTimeout(()=>URL.revokeObjectURL(url),4000); toast('Downloading '+name);
+    }catch(e){ $('g-status').textContent='PDF error: '+(e.message||e); toast('PDF error'); }
+  });
+  $('g-open').addEventListener('click',()=>{
+    if(!ready()) return;
+    try{ const {blob}=makeBlob(); const url=URL.createObjectURL(blob); window.open(url,'_blank'); }
+    catch(e){ $('g-status').textContent='PDF error: '+(e.message||e); toast('PDF error'); }
   });
 
   calcTarmac(); calcBed(); calcGrad();
